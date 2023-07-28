@@ -1,0 +1,9 @@
+{
+  "BackupPath": "/backup/",
+  "SFTP": {
+    "Server": "",
+    "User": "root",
+    "Password": "",
+    "Port": 22
+  }
+}
