@@ -1,111 +1,43 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"github.com/pkg/sftp"
-	"golang.org/x/crypto/ssh"
 	"io"
 	"log"
 	"os"
-	"path"
 	"regexp"
 	"syscall"
 	"time"
 )
 
-var configPath string
-var rootPath string
-
 func main() {
 	fmt.Println("Started Backuper")
-
-	// Устанавливаем пути к корневой директории и конфигу
-	if cwd, err := os.Getwd(); err == nil {
-		rootPath = cwd + string(os.PathSeparator)
-		configPath = rootPath + "config.json"
-	}
 
 	// Удаляем старые файлы
 	deleteOldFiles()
 
-	// Читаем конфиг
 	config, _ := readConfig()
-
-	var auths []ssh.AuthMethod
-
-	/*	if aconn, err := net.Dial("unix", os.Getenv("SSH_AUTH_SOCK")); err == nil {
-		auths = append(auths, ssh.PublicKeysCallback(agent.NewClient(aconn).Signers))
-	}*/
-
-	auths = append(auths, ssh.Password(config.SFTP.Password))
-
-	configClient := ssh.ClientConfig{
-		User:            config.SFTP.User,
-		Auth:            auths,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-	}
-	addr := fmt.Sprintf("%s:%d", config.SFTP.Server, config.SFTP.Port)
-	conn, err := ssh.Dial("tcp", addr, &configClient)
-	if err != nil {
-		log.Fatalf("unable to connect to [%s]: %v", addr, err)
-	}
-	defer conn.Close()
-
-	// open an SFTP session over an existing ssh connection.
-	client, err := sftp.NewClient(conn)
+	client, err := Connect(&config)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer client.Close()
+	defer CloseConnect()
 
-	// walk a directory
-	w := client.Walk(config.BackupPath)
-	for w.Step() {
-		if w.Err() != nil {
-			fmt.Println(w.Err())
-			continue
-		}
+	files := getRemoteFiles(client, config.BackupPath)
 
-		// Skip directories and files without .tar extension
-		if w.Stat().IsDir() || path.Ext(w.Path()) != ".tar" {
-			continue
-		}
+	channel := make(chan string, 100)
+	for _, filename := range files {
+		// fmt.Println("Path:", filename, "IsOld:", isOldFile(filename))
+		go downloadFileFromServer(client, filename, channel)
+	}
 
-		downloadFileFromServer(&*client, w.Path())
-
-		// fmt.Println("Path:", w.Path(), "IsOld:", isOldFile(w.Path()))
+	for range files {
+		fmt.Println(<-channel)
 	}
 }
 
-type Config struct {
-	BackupPath string
-	SFTP       struct {
-		Server   string
-		User     string
-		Password string
-		Port     int
-	}
-}
-
-func readConfig() (config Config, err error) {
-	var m Config
-	file, err := os.ReadFile(configPath)
-	if err != nil {
-		log.Println(err)
-		return m, err
-	}
-
-	jsonerr := json.Unmarshal(file, &m)
-	if jsonerr != nil {
-		log.Println(err)
-		return m, err
-	}
-
-	return m, err
-}
-
-func downloadFileFromServer(client *sftp.Client, filename string) {
+func downloadFileFromServer(client *sftp.Client, filename string, channel chan string) {
 	// Получаем файл с удаленного сервера
 	remoteFile, err := client.Open(filename)
 	if err != nil {
@@ -114,12 +46,13 @@ func downloadFileFromServer(client *sftp.Client, filename string) {
 	defer remoteFile.Close()
 
 	file, _ := remoteFile.Stat()
-	log.Println("Loading file: ", file.Name(), "Size:", file.Size())
+	// log.Println("Loading file: ", file.Name(), "Size:", file.Size())
 
 	// Проверяем существует ли файл. Если да, то пропускаем
 	localFileName := rootPath + "/backups/" + file.Name()
 	if _, err := os.Lstat(localFileName); err == nil {
-		log.Println("File exists:", file.Name(), "skip downloading")
+		// log.Println("File exists:", file.Name(), "skip downloading")
+		channel <- fmt.Sprintf("File exists %s", file.Name())
 		return
 	}
 
@@ -138,7 +71,9 @@ func downloadFileFromServer(client *sftp.Client, filename string) {
 	if n != file.Size() {
 		log.Fatalf("copy: expected %v bytes, got %d", file.Size(), n)
 	}
-	log.Printf("Downloaded %v bytes in %s", file.Size(), time.Since(t1))
+	// log.Printf("Downloaded %v bytes in %s", file.Size(), time.Since(t1))
+
+	channel <- fmt.Sprintf("Downloaded %s - %v bytes in %s", file.Name(), file.Size(), time.Since(t1))
 }
 
 func isOldFile(filePath string) bool {
