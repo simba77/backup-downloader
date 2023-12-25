@@ -33,14 +33,23 @@ func downloadFileFromServer(client *sftp.Client, server Server, filename string)
 	file, _ := remoteFile.Stat()
 
 	storagePathForServer := storagePath + server.Name + "/"
-	localFileName := storagePathForServer + file.Name()
+
+	var localFileName string
+	if server.PathTemplate == PathWithDate {
+		// Add date to filename
+		expression := regexp.MustCompile(`(\d{2}).(\d{1,2}).(\d{1,2})`)
+		date := expression.FindString(filename)
+		localFileName = storagePathForServer + date + "_" + file.Name()
+	} else {
+		localFileName = storagePathForServer + file.Name()
+	}
+
 	if _, err := os.Lstat(localFileName); err == nil {
 		log.Printf("[%s] File exists %s. Skip downloading\n", server.Name, file.Name())
 		return
 	}
 
-	// Открываем файл на запись
-	writer, err := os.OpenFile(storagePathForServer+file.Name(), syscall.O_CREAT|syscall.O_WRONLY, 0644)
+	writer, err := os.OpenFile(localFileName, syscall.O_CREAT|syscall.O_WRONLY, 0644)
 	if err != nil {
 		log.Fatal(err)
 		return
@@ -85,7 +94,13 @@ func isOldFile(filePath string, server Server) bool {
 	}
 
 	if server.PathTemplate == PathWithDate {
-		// TODO
+		expression := regexp.MustCompile(`(\d{2}).(\d{1,2}).(\d{1,2})`)
+		date := expression.FindString(filePath)
+		if parsedTime, err := time.Parse("02.01.06", date); err == nil {
+			// Check the date
+			oldDate := time.Now().Add(-(time.Hour * 24 * time.Duration(server.DaysCount)))
+			return parsedTime.Before(oldDate)
+		}
 	}
 
 	return false
