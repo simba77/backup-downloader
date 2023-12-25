@@ -6,6 +6,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"log"
 	"path"
+	"regexp"
 )
 
 var connection map[string]*ssh.Client
@@ -62,22 +63,52 @@ func CloseConnect(config Server) {
 	log.Printf("[%s] Close connection\n", config.Name)
 }
 
-func getRemoteFiles(sftpClient *sftp.Client, backupPath string) []string {
+func getRemoteFiles(sftpClient *sftp.Client, server Server) []string {
 	var remoteFiles []string
+	var filesExpression *regexp.Regexp
+
+	if len(server.FilePattern) > 0 {
+		filesExpression = regexp.MustCompile(server.FilePattern)
+	}
+
 	// walk a directory
-	w := sftpClient.Walk(backupPath)
-	for w.Step() {
-		if w.Err() != nil {
-			log.Println(w.Err())
+	walker := sftpClient.Walk(server.BackupsPath)
+	for walker.Step() {
+		if walker.Err() != nil {
+			log.Println(walker.Err())
 			continue
 		}
 
-		// Skip directories and files without .tar extension
-		if w.Stat().IsDir() || path.Ext(w.Path()) != ".tar" {
+		if walker.Stat().IsDir() || isOldFile(walker.Path(), server) || (filesExpression != nil && !filesExpression.MatchString(walker.Path())) {
 			continue
 		}
 
-		remoteFiles = append(remoteFiles, w.Path())
+		// Hestia CP path structure. /backup/admin.2023-12-25_05-11-45.tar
+		if server.PathTemplate == Hestia {
+			// Skip directories and files without .tar extension
+			if path.Ext(walker.Path()) != ".tar" {
+				continue
+			}
+			remoteFiles = append(remoteFiles, walker.Path())
+		}
+
+		// Files with date /backups/test.20231221.sql.gz
+		if server.PathTemplate == FilesWithDate {
+			if path.Ext(walker.Path()) != ".gz" {
+				continue
+			}
+			remoteFiles = append(remoteFiles, walker.Path())
+		}
+
+		// Files in paths /24.12.23/test.tgz, /24.12.23/test.sql.bz2
+		if server.PathTemplate == PathWithDate {
+			// TODO: Move extensions to config file
+			extension := path.Ext(walker.Path())
+			if extension != ".tgz" && extension != ".bz2" {
+				continue
+			}
+			remoteFiles = append(remoteFiles, walker.Path())
+		}
 	}
 
 	return remoteFiles

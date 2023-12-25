@@ -2,6 +2,7 @@
   "storagePath": "backups/",
   "servers": [
     {
+      "active": true,
       "name": "server1",
       "daysCount": 5,
       "maxParallelDownloads": 2,
@@ -10,9 +11,12 @@
       "server": "",
       "user": "root",
       "password": "",
-      "port": 22
+      "port": 22,
+      "pathTemplate": "hestia",
+      "filePattern": ""
     },
     {
+      "active": true,
       "name": "server2",
       "daysCount": 4,
       "maxParallelDownloads": 4,
@@ -21,7 +25,9 @@
       "server": "",
       "user": "root",
       "password": "",
-      "port": 22
+      "port": 22,
+      "pathTemplate": "hestia",
+      "filePattern": ""
     }
   ]
 }

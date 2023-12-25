@@ -6,7 +6,16 @@ import (
 	"os"
 )
 
+type PathTemplate string
+
+const (
+	Hestia        PathTemplate = "hestia"
+	FilesWithDate PathTemplate = "filesWithDate"
+	PathWithDate  PathTemplate = "pathWithDate"
+)
+
 type Server struct {
+	Active               bool
 	Name                 string
 	Type                 string
 	DaysCount            int
@@ -16,6 +25,8 @@ type Server struct {
 	User                 string
 	Password             string
 	Port                 int
+	PathTemplate         PathTemplate
+	FilePattern          string
 }
 
 type NewConfig struct {
