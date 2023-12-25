@@ -1,45 +1,48 @@
 package main
 
 import (
-	"encoding/json"
+	"github.com/spf13/viper"
 	"log"
 	"os"
 )
 
-type Config struct {
-	BackupPath string
-	SFTP       struct {
-		Server   string
-		User     string
-		Password string
-		Port     int
-	}
+type Server struct {
+	Name                 string
+	Type                 string
+	DaysCount            int
+	MaxParallelDownloads int
+	BackupsPath          string
+	Server               string
+	User                 string
+	Password             string
+	Port                 int
 }
 
-var configPath string
-var rootPath string
+type NewConfig struct {
+	StoragePath string
+	Servers     []Server
+}
+
+var storagePath string
+var backuperConfig NewConfig
 
 func init() {
-	// Устанавливаем пути к корневой директории и конфигу
-	if cwd, err := os.Getwd(); err == nil {
-		rootPath = cwd + string(os.PathSeparator)
-		configPath = rootPath + "config.json"
+	viper.AddConfigPath(".")
+	viper.SetConfigName("config")
+	viper.SetConfigType("json")
+	readConfigErr := viper.ReadInConfig()
+	if readConfigErr != nil {
+		log.Fatalf("Unable to read config file, %v", readConfigErr)
+		return
 	}
-}
 
-func readConfig() (config Config, err error) {
-	var m Config
-	file, err := os.ReadFile(configPath)
+	err := viper.Unmarshal(&backuperConfig)
 	if err != nil {
-		log.Println(err)
-		return m, err
+		log.Fatalf("Unable to decode into struct, %v", err)
 	}
 
-	jsonerr := json.Unmarshal(file, &m)
-	if jsonerr != nil {
-		log.Println(err)
-		return m, err
+	// Set the storage path
+	if cwd, err := os.Getwd(); err == nil {
+		storagePath = cwd + string(os.PathSeparator) + backuperConfig.StoragePath
 	}
-
-	return m, err
 }

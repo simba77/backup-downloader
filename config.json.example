@@ -1,9 +1,27 @@
 {
-  "BackupPath": "/backup/",
-  "SFTP": {
-    "Server": "",
-    "User": "root",
-    "Password": "",
-    "Port": 22
-  }
+  "storagePath": "backups/",
+  "servers": [
+    {
+      "name": "server1",
+      "daysCount": 5,
+      "maxParallelDownloads": 2,
+      "backupsPath": "/backup/",
+      "type": "sftp",
+      "server": "",
+      "user": "root",
+      "password": "",
+      "port": 22
+    },
+    {
+      "name": "server2",
+      "daysCount": 4,
+      "maxParallelDownloads": 4,
+      "backupsPath": "/backup/",
+      "type": "sftp",
+      "server": "",
+      "user": "root",
+      "password": "",
+      "port": 22
+    }
+  ]
 }

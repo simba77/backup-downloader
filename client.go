@@ -8,48 +8,58 @@ import (
 	"path"
 )
 
-var connection *ssh.Client
-var client *sftp.Client
+var connection map[string]*ssh.Client
+var client map[string]*sftp.Client
 
-func Connect(config *Config) (*sftp.Client, error) {
+func init() {
+	connection = make(map[string]*ssh.Client)
+	client = make(map[string]*sftp.Client)
+}
 
+func Connect(config Server) (*sftp.Client, error) {
+	log.Printf("[%s] Connectiong to server \n", config.Name)
 	var auths []ssh.AuthMethod
 
 	/*	if aconn, err := net.Dial("unix", os.Getenv("SSH_AUTH_SOCK")); err == nil {
 		auths = append(auths, ssh.PublicKeysCallback(agent.NewClient(aconn).Signers))
 	}*/
 
-	auths = append(auths, ssh.Password(config.SFTP.Password))
+	auths = append(auths, ssh.Password(config.Password))
 
 	configClient := ssh.ClientConfig{
-		User:            config.SFTP.User,
+		User:            config.User,
 		Auth:            auths,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
 
-	addr := fmt.Sprintf("%s:%d", config.SFTP.Server, config.SFTP.Port)
+	addr := fmt.Sprintf("%s:%d", config.Server, config.Port)
 
 	if conn, err := ssh.Dial("tcp", addr, &configClient); err == nil {
-		connection = conn
+		connection[config.Name] = conn
 	} else {
 		log.Fatalf("unable to connect to [%s]: %v", addr, err)
 		return nil, fmt.Errorf("unable to connect to [%s]: %v", addr, err)
 	}
 
 	// open an SFTP session over an existing ssh connection.
-	if sftpClient, err := sftp.NewClient(connection); err == nil {
-		client = sftpClient
-		return client, nil
+	if sftpClient, err := sftp.NewClient(connection[config.Name]); err == nil {
+		client[config.Name] = sftpClient
+		return client[config.Name], nil
 	} else {
 		log.Fatal(err)
 		return nil, err
 	}
 }
 
-func CloseConnect() {
-	connection.Close()
-	client.Close()
-	fmt.Println("Close connection")
+func CloseConnect(config Server) {
+	connection[config.Name].Close()
+	client[config.Name].Close()
+
+	// Удаляем значения из карты
+	delete(connection, config.Name)
+	delete(client, config.Name)
+
+	log.Printf("[%s] Close connection\n", config.Name)
 }
 
 func getRemoteFiles(sftpClient *sftp.Client, backupPath string) []string {
@@ -58,7 +68,7 @@ func getRemoteFiles(sftpClient *sftp.Client, backupPath string) []string {
 	w := sftpClient.Walk(backupPath)
 	for w.Step() {
 		if w.Err() != nil {
-			fmt.Println(w.Err())
+			log.Println(w.Err())
 			continue
 		}
 
@@ -68,7 +78,6 @@ func getRemoteFiles(sftpClient *sftp.Client, backupPath string) []string {
 		}
 
 		remoteFiles = append(remoteFiles, w.Path())
-		// downloadFileFromServer(&*client, w.Path())
 	}
 
 	return remoteFiles
