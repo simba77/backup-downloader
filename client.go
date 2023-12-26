@@ -38,7 +38,6 @@ func Connect(config Server) (*sftp.Client, error) {
 	if conn, err := ssh.Dial("tcp", addr, &configClient); err == nil {
 		connection[config.Name] = conn
 	} else {
-		log.Fatalf("unable to connect to [%s]: %v", addr, err)
 		return nil, fmt.Errorf("unable to connect to [%s]: %v", addr, err)
 	}
 

@@ -27,7 +27,8 @@ func downloadFileFromServer(client *sftp.Client, server Server, filename string)
 	log.Printf("[%s] Starting download - %s \n", server.Name, filename)
 	remoteFile, err := client.Open(filename)
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("%v", err)
+		return
 	}
 	defer remoteFile.Close()
 
@@ -52,7 +53,7 @@ func downloadFileFromServer(client *sftp.Client, server Server, filename string)
 
 	writer, err := os.OpenFile(localFileName, syscall.O_CREAT|syscall.O_WRONLY, 0644)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 		return
 	}
 	defer writer.Close()
@@ -60,11 +61,11 @@ func downloadFileFromServer(client *sftp.Client, server Server, filename string)
 	t1 := time.Now()
 	n, err := io.Copy(writer, io.LimitReader(remoteFile, file.Size()))
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 		return
 	}
 	if n != file.Size() {
-		log.Fatalf("[%s] copy: expected %v bytes, got %d \n", server.Name, file.Size(), n)
+		log.Printf("[%s] copy: expected %v bytes, got %d \n", server.Name, file.Size(), n)
 	}
 
 	log.Printf("[%s] Downloaded - %s - %v bytes in %s \n", server.Name, file.Name(), file.Size(), time.Since(t1))
@@ -116,6 +117,7 @@ func deleteOldFiles(server Server) {
 		fmt.Println("Skip this server")
 		return
 	}
+	defer f.Close()
 
 	files, err := f.Readdir(0)
 	if err != nil {

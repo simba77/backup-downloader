@@ -31,8 +31,9 @@ type Server struct {
 }
 
 type NewConfig struct {
-	StoragePath string
-	Servers     []Server
+	StoragePath      string
+	StartBackupsHour int
+	Servers          []Server
 }
 
 var storagePath string

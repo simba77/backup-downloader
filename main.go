@@ -11,6 +11,7 @@ import (
 
 func main() {
 	fmt.Println("Started Backuper")
+	var wg sync.WaitGroup
 
 	for {
 		file, err := openLogFile()
@@ -22,6 +23,11 @@ func main() {
 
 		log.Println("Started Backuper")
 
+		current := time.Now()
+		startBackupDate := time.Date(current.Year(), current.Month(), current.Day()+1, backuperConfig.StartBackupsHour, 0, 0, 0, time.Local)
+		// startBackupDate := time.Now().Add(time.Second * 30)
+		log.Printf("The next backup is scheduled for %v", startBackupDate.Format("02.01.2006 15:04:05"))
+
 		// Delete old files
 		for _, server := range backuperConfig.Servers {
 			if !server.Active {
@@ -31,35 +37,46 @@ func main() {
 			deleteOldFiles(server)
 		}
 
-		channel := make(chan string, 100)
-		for _, server := range backuperConfig.Servers {
-			if !server.Active {
-				continue
-			}
-			go downloadBackupsForServer(server, channel)
-		}
+		pool, _ := ants.NewPoolWithFunc(100, func(i interface{}) {
+			downloadBackupsForServer(i.(Server))
+			wg.Done()
+		})
 
 		for _, server := range backuperConfig.Servers {
 			if !server.Active {
 				continue
 			}
-			log.Println(<-channel)
+
+			wg.Add(1)
+			_ = pool.Invoke(server)
 		}
+
+		wg.Wait()
+		pool.Release()
 
 		// Sleep to wait for next time to create a backup
-		current := time.Now()
-		// TODO: Move the date to config
-		startBackupDate := time.Date(current.Year(), current.Month(), current.Day()+1, 6, 0, 0, 0, time.Local)
-		toBackup := time.Until(startBackupDate)
-		time.Sleep(toBackup)
+		if startBackupDate.After(time.Now()) {
+			log.Printf("Sleep until: %v", startBackupDate)
+			toBackup := time.Until(startBackupDate)
+			time.Sleep(toBackup)
+		} else {
+			log.Printf("Start the next backup without sleep %v", startBackupDate)
+		}
+
+		closeError := file.Close()
+		if closeError != nil {
+			log.Printf("%v", closeError)
+			return
+		}
 	}
 }
 
-func downloadBackupsForServer(server Server, channel chan<- string) {
+func downloadBackupsForServer(server Server) {
 	var wg sync.WaitGroup
 	client, err := Connect(server)
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("Connection error: %v", err)
+		return
 	}
 	defer CloseConnect(server)
 
@@ -77,7 +94,7 @@ func downloadBackupsForServer(server Server, channel chan<- string) {
 
 	wg.Wait()
 
-	channel <- fmt.Sprintf("[%s] All files have been downloaded", server.Name)
+	log.Printf("[%s] All files have been downloaded", server.Name)
 }
 
 func openLogFile() (*os.File, error) {

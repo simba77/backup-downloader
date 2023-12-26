@@ -1,5 +1,6 @@
 {
   "storagePath": "backups/",
+  "startBackupsHour": 6,
   "servers": [
     {
       "active": true,
