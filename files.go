@@ -59,7 +59,7 @@ func downloadFileFromServer(client *sftp.Client, server Server, filename string)
 	defer writer.Close()
 
 	t1 := time.Now()
-	n, err := io.Copy(writer, io.LimitReader(remoteFile, file.Size()))
+	n, err := io.Copy(writer, remoteFile)
 	if err != nil {
 		log.Println(err)
 		return
