@@ -7,7 +7,7 @@ This version is currently intended for backups created by the Hestia control pan
 
 ## Build
 
-Change the target platforms in the file: build.sh.
+Change the target platforms in the file: build.sh (if you need)
 
 ```
 platforms=("linux/amd64" "darwin/amd64")
@@ -35,4 +35,42 @@ CONFIG_PATH=/path/to/config ./linux-amd64
 ```
 
 
+## Service example
+
+```shell
+systemctl edit --full --force backuper.service
+```
+
+Config example
+
+Change the ExecStart and Environment parameters
+
+```
+[Unit]
+Description=Backuper
+Wants=network-online.target
+After=network-online.target
+[Service]
+Environment="CONFIG_PATH=/backups"
+User=root
+Group=root
+Type=simple
+ExecStart=/backups/backuper
+[Install]
+WantedBy=multi-user.target
+```
+
+```shell
+systemctl daemon-reload
+```
+
+```shell
+systemctl start backuper
+```
+
+Enable autostart
+
+```shell
+systemctl enable backuper
+```
 
