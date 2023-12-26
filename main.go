@@ -4,41 +4,55 @@ import (
 	"fmt"
 	"github.com/panjf2000/ants/v2"
 	"log"
+	"os"
 	"sync"
 	"time"
 )
 
 func main() {
-	log.Println("Started Backuper")
+	fmt.Println("Started Backuper")
 
-	// for {
-	// Delete old files
-	for _, server := range backuperConfig.Servers {
-		if !server.Active {
-			continue
+	for {
+		file, err := openLogFile()
+		if err != nil {
+			log.Fatal(err)
 		}
-		checkAndCreateStorageDirectory(server)
-		deleteOldFiles(server)
-	}
+		log.SetOutput(file)
+		log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
 
-	channel := make(chan string, 100)
-	for _, server := range backuperConfig.Servers {
-		if !server.Active {
-			continue
+		log.Println("Started Backuper")
+
+		// Delete old files
+		for _, server := range backuperConfig.Servers {
+			if !server.Active {
+				continue
+			}
+			checkAndCreateStorageDirectory(server)
+			deleteOldFiles(server)
 		}
-		go downloadBackupsForServer(server, channel)
-	}
 
-	for _, server := range backuperConfig.Servers {
-		if !server.Active {
-			continue
+		channel := make(chan string, 100)
+		for _, server := range backuperConfig.Servers {
+			if !server.Active {
+				continue
+			}
+			go downloadBackupsForServer(server, channel)
 		}
-		log.Println(<-channel)
-	}
 
-	// Sleep to wait for connections to be closed
-	time.Sleep(time.Second * 2) // TODO: Change the duration to the next night
-	//}
+		for _, server := range backuperConfig.Servers {
+			if !server.Active {
+				continue
+			}
+			log.Println(<-channel)
+		}
+
+		// Sleep to wait for next time to create a backup
+		current := time.Now()
+		// TODO: Move the date to config
+		startBackupDate := time.Date(current.Year(), current.Month(), current.Day()+1, 6, 0, 0, 0, time.Local)
+		toBackup := time.Until(startBackupDate)
+		time.Sleep(toBackup)
+	}
 }
 
 func downloadBackupsForServer(server Server, channel chan<- string) {
@@ -64,4 +78,23 @@ func downloadBackupsForServer(server Server, channel chan<- string) {
 	wg.Wait()
 
 	channel <- fmt.Sprintf("[%s] All files have been downloaded", server.Name)
+}
+
+func openLogFile() (*os.File, error) {
+	logPath := storagePath + "logs"
+	if _, err := os.Stat(logPath); os.IsNotExist(err) {
+		err := os.Mkdir(logPath, 0755)
+		if err != nil {
+			log.Fatal(err)
+			return nil, nil
+		}
+	}
+
+	path := logPath + "/log-" + time.Now().Format("02-01-2006") + ".log"
+
+	logFile, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
+	if err != nil {
+		return nil, err
+	}
+	return logFile, nil
 }

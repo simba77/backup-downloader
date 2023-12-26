@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"regexp"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -125,7 +126,7 @@ func deleteOldFiles(server Server) {
 	for _, file := range files {
 		if !file.IsDir() && isOldFile(file.Name(), server) {
 			// Delete file from storage
-			err := os.Remove(storagePath + "/" + file.Name())
+			err := os.Remove(strings.TrimSuffix(storagePath, "/") + "/" + server.Name + "/" + file.Name())
 			if err != nil {
 				log.Println(err)
 				return

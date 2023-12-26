@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/viper"
 	"log"
 	"os"
+	"strings"
 )
 
 type PathTemplate string
@@ -53,7 +54,11 @@ func init() {
 	}
 
 	// Set the storage path
-	if cwd, err := os.Getwd(); err == nil {
-		storagePath = cwd + string(os.PathSeparator) + backuperConfig.StoragePath
+	if strings.HasPrefix(backuperConfig.StoragePath, "/") {
+		storagePath = backuperConfig.StoragePath
+	} else {
+		if cwd, err := os.Getwd(); err == nil {
+			storagePath = cwd + string(os.PathSeparator) + backuperConfig.StoragePath
+		}
 	}
 }
