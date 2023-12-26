@@ -1,5 +1,5 @@
 {
-  "storagePath": "backups/",
+  "storagePath": "/backups/",
   "startBackupsHour": 6,
   "servers": [
     {
