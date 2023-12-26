@@ -40,7 +40,11 @@ var storagePath string
 var backuperConfig NewConfig
 
 func init() {
-	viper.AddConfigPath(".")
+	if len(os.Getenv("CONFIG_PATH")) > 0 {
+		viper.AddConfigPath(os.Getenv("CONFIG_PATH"))
+	} else {
+		viper.AddConfigPath(".")
+	}
 	viper.SetConfigName("config")
 	viper.SetConfigType("json")
 	readConfigErr := viper.ReadInConfig()
