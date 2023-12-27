@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
-platforms=("linux/amd64" "darwin/amd64")
+# https://www.digitalocean.com/community/tutorials/how-to-build-go-executables-for-multiple-platforms-on-ubuntu-16-04
+platforms=("linux/amd64" "darwin/amd64" "linux/arm64")
 
 for platform in "${platforms[@]}"
 do
