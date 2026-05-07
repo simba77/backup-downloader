@@ -141,3 +141,34 @@ func deleteOldFiles(server Server) {
 
 	log.Printf("[%s] Old files have been deleted", server.Name)
 }
+
+func deleteOldLogs() {
+	logPath := storagePath + "logs"
+	f, err := os.Open(logPath)
+	if err != nil {
+		log.Printf("Cannot open logs directory: %v", err)
+		return
+	}
+	defer f.Close()
+
+	files, err := f.Readdir(0)
+	if err != nil {
+		log.Printf("Cannot read logs directory: %v", err)
+		return
+	}
+
+	cutoff := time.Now().Add(-(time.Hour * 24 * time.Duration(backuperConfig.LogRetentionDays)))
+	for _, file := range files {
+		if file.IsDir() || !strings.HasSuffix(file.Name(), ".log") {
+			continue
+		}
+		if file.ModTime().Before(cutoff) {
+			err := os.Remove(logPath + "/" + file.Name())
+			if err != nil {
+				log.Printf("Cannot delete log file %s: %v", file.Name(), err)
+			} else {
+				log.Printf("Deleted old log file: %s", file.Name())
+			}
+		}
+	}
+}

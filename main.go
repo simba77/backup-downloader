@@ -36,6 +36,7 @@ func main() {
 			checkAndCreateStorageDirectory(server)
 			deleteOldFiles(server)
 		}
+		deleteOldLogs()
 
 		pool, _ := ants.NewPoolWithFunc(100, func(i interface{}) {
 			downloadBackupsForServer(i.(Server))

@@ -33,6 +33,7 @@ type Server struct {
 type NewConfig struct {
 	StoragePath      string
 	StartBackupsHour int
+	LogRetentionDays int
 	Servers          []Server
 }
 
@@ -47,6 +48,7 @@ func init() {
 	}
 	viper.SetConfigName("config")
 	viper.SetConfigType("json")
+	viper.SetDefault("logretentiondays", 14)
 	readConfigErr := viper.ReadInConfig()
 	if readConfigErr != nil {
 		log.Fatalf("Unable to read config file, %v", readConfigErr)

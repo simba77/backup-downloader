@@ -37,6 +37,7 @@ Copy [config.json.example](config.json.example) to your config directory and ren
 |---|---|
 | `storagePath` | Local directory where downloaded backups are stored |
 | `startBackupsHour` | Hour of the day (0–23) when the backup download starts |
+| `logRetentionDays` | How many days to keep log files (default: 14) |
 | `servers` | List of remote servers to download from |
 
 Each server entry:
