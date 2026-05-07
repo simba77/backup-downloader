@@ -1,0 +1,15 @@
+# OS
+.DS_Store
+
+# IDE
+.idea/
+
+# Build output
+build/
+
+# Backups data
+backups/
+
+# Configs with credentials (use config.json.example as template)
+config.json
+config2.json
