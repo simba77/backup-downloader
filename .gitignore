@@ -6,6 +6,7 @@
 
 # Build output
 build/
+/backuper
 
 # Backups data
 backups/
