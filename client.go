@@ -9,6 +9,17 @@ import (
 	"regexp"
 )
 
+// Archive extensions produced by nxs-backup depending on the configured compression
+var nxsBackupExtensions = map[string]bool{
+	".gz":  true,
+	".tgz": true,
+	".tar": true,
+	".bz2": true,
+	".xz":  true,
+	".zst": true,
+	".zip": true,
+}
+
 var connection map[string]*ssh.Client
 var client map[string]*sftp.Client
 
@@ -106,6 +117,21 @@ func getRemoteFiles(sftpClient *sftp.Client, server Server) []string {
 			if extension != ".tgz" && extension != ".bz2" {
 				continue
 			}
+			remoteFiles = append(remoteFiles, walker.Path())
+		}
+
+		// nxs-backup path structure. /backups/configs/acme/daily/acme_2026-08-18_02-00.tar.gz
+		if server.PathTemplate == NxsBackup {
+			// Skip everything that is not a <daily|weekly|monthly>/<name>_<date>.<ext> copy
+			if _, _, ok := parseNxsBackupPath(walker.Path()); !ok {
+				continue
+			}
+			if !nxsBackupExtensions[path.Ext(walker.Path())] {
+				continue
+			}
+			// Symlinks (daily copies pointing to the weekly/monthly ones) are kept in
+			// the list on purpose: SFTP resolves them on open, so the original file
+			// gets downloaded instead of a dangling link.
 			remoteFiles = append(remoteFiles, walker.Path())
 		}
 	}

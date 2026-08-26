@@ -13,7 +13,16 @@ const (
 	Hestia        PathTemplate = "hestia"
 	FilesWithDate PathTemplate = "filesWithDate"
 	PathWithDate  PathTemplate = "pathWithDate"
+	NxsBackup     PathTemplate = "nxsBackup"
 )
+
+// Retention holds the number of days to keep each kind of nxs-backup copy.
+// A zero value falls back to the DaysCount of the server.
+type Retention struct {
+	Daily   int
+	Weekly  int
+	Monthly int
+}
 
 type Server struct {
 	Active               bool
@@ -28,6 +37,7 @@ type Server struct {
 	Port                 int
 	PathTemplate         PathTemplate
 	FilePattern          string
+	Retention            Retention
 }
 
 type NewConfig struct {

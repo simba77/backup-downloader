@@ -6,6 +6,8 @@ import (
 	"io"
 	"log"
 	"os"
+	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"syscall"
@@ -37,13 +39,23 @@ func downloadFileFromServer(client *sftp.Client, server Server, filename string)
 	storagePathForServer := storagePath + server.Name + "/"
 
 	var localFileName string
-	if server.PathTemplate == PathWithDate {
+	switch server.PathTemplate {
+	case PathWithDate:
 		// Add date to filename
 		expression := regexp.MustCompile(`(\d{2}).(\d{1,2}).(\d{1,2})`)
 		date := expression.FindString(filename)
 		localFileName = storagePathForServer + date + "_" + file.Name()
-	} else {
+	case NxsBackup:
+		// Mirror the remote tree, otherwise the daily/weekly/monthly copies
+		// of the same backup would collide by name
+		localFileName = storagePathForServer + nxsBackupRelativePath(server, filename)
+	default:
 		localFileName = storagePathForServer + file.Name()
+	}
+
+	if err := os.MkdirAll(filepath.Dir(localFileName), 0755); err != nil {
+		log.Println(err)
+		return
 	}
 
 	if _, err := os.Lstat(localFileName); err == nil {
@@ -69,6 +81,52 @@ func downloadFileFromServer(client *sftp.Client, server Server, filename string)
 	}
 
 	log.Printf("[%s] Downloaded - %s - %v bytes in %s \n", server.Name, file.Name(), file.Size(), time.Since(t1))
+}
+
+// nxs-backup stores copies as <group>/<source>/<daily|weekly|monthly>/<name>_2026-08-18_02-00.<ext>
+var nxsBackupPathExpression = regexp.MustCompile(`(?:^|/)(daily|weekly|monthly)/[^/]+_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2})\.`)
+
+// parseNxsBackupPath extracts the copy period and its creation time from an
+// nxs-backup path. Works both with remote absolute paths and with paths
+// relative to the local storage directory of the server.
+func parseNxsBackupPath(filePath string) (string, time.Time, bool) {
+	matches := nxsBackupPathExpression.FindStringSubmatch(filePath)
+	if matches == nil {
+		return "", time.Time{}, false
+	}
+
+	created, err := time.Parse("2006-01-02_15-04", matches[2])
+	if err != nil {
+		return "", time.Time{}, false
+	}
+
+	return matches[1], created, true
+}
+
+// nxsBackupRelativePath returns the remote file path relative to the backups
+// root of the server, so the remote tree can be mirrored locally.
+func nxsBackupRelativePath(server Server, remotePath string) string {
+	root := strings.TrimSuffix(path.Clean(server.BackupsPath), "/")
+	return strings.TrimPrefix(strings.TrimPrefix(path.Clean(remotePath), root), "/")
+}
+
+// retentionDays returns how many days the copies of the given period are kept.
+// Falls back to the DaysCount of the server when the period is not configured.
+func retentionDays(server Server, period string) int {
+	var days int
+	switch period {
+	case "daily":
+		days = server.Retention.Daily
+	case "weekly":
+		days = server.Retention.Weekly
+	case "monthly":
+		days = server.Retention.Monthly
+	}
+
+	if days <= 0 {
+		return server.DaysCount
+	}
+	return days
 }
 
 func isOldFile(filePath string, server Server) bool {
@@ -105,41 +163,89 @@ func isOldFile(filePath string, server Server) bool {
 		}
 	}
 
+	if server.PathTemplate == NxsBackup {
+		if period, created, ok := parseNxsBackupPath(filePath); ok {
+			oldDate := time.Now().Add(-(time.Hour * 24 * time.Duration(retentionDays(server, period))))
+			return created.Before(oldDate)
+		}
+	}
+
 	return false
 }
 
 func deleteOldFiles(server Server) {
 	log.Printf("[%s] Deleting old files from storage \n", server.Name)
 
-	f, err := os.Open(storagePath + server.Name)
-	if err != nil {
+	serverStoragePath := strings.TrimSuffix(storagePath, "/") + "/" + server.Name
+
+	if _, err := os.Stat(serverStoragePath); err != nil {
 		fmt.Println(err)
 		fmt.Println("Skip this server")
 		return
 	}
-	defer f.Close()
 
-	files, err := f.Readdir(0)
+	// Walk recursively: the nxsBackup template mirrors the remote tree locally
+	err := filepath.WalkDir(serverStoragePath, func(filePath string, entry os.DirEntry, err error) error {
+		if err != nil {
+			log.Println(err)
+			return nil
+		}
+		if entry.IsDir() {
+			return nil
+		}
+
+		relativePath, relErr := filepath.Rel(serverStoragePath, filePath)
+		if relErr != nil {
+			log.Println(relErr)
+			return nil
+		}
+
+		if !isOldFile(relativePath, server) {
+			log.Printf("[%s] Skip File: %s", server.Name, relativePath)
+			return nil
+		}
+
+		// Delete file from storage
+		if removeErr := os.Remove(filePath); removeErr != nil {
+			log.Println(removeErr)
+			return nil
+		}
+		log.Printf("[%s] Delete File: %s", server.Name, relativePath)
+		return nil
+	})
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 		return
 	}
 
-	for _, file := range files {
-		if !file.IsDir() && isOldFile(file.Name(), server) {
-			// Delete file from storage
-			err := os.Remove(strings.TrimSuffix(storagePath, "/") + "/" + server.Name + "/" + file.Name())
-			if err != nil {
-				log.Println(err)
-				return
-			}
-			log.Printf("[%s] Delete File: %s", server.Name, file.Name())
-		} else {
-			log.Printf("[%s] Skip File: %s", server.Name, file.Name())
-		}
-	}
+	removeEmptyDirs(serverStoragePath)
 
 	log.Printf("[%s] Old files have been deleted", server.Name)
+}
+
+// removeEmptyDirs cleans up the directories left empty after the deletion.
+// The root directory itself is kept.
+func removeEmptyDirs(root string) {
+	var dirs []string
+	walkErr := filepath.WalkDir(root, func(dirPath string, entry os.DirEntry, err error) error {
+		if err == nil && entry.IsDir() && dirPath != root {
+			dirs = append(dirs, dirPath)
+		}
+		return nil
+	})
+	if walkErr != nil {
+		log.Println(walkErr)
+		return
+	}
+
+	// WalkDir walks in lexical order, so going backwards removes the deepest directories first
+	for i := len(dirs) - 1; i >= 0; i-- {
+		if entries, err := os.ReadDir(dirs[i]); err == nil && len(entries) == 0 {
+			if removeErr := os.Remove(dirs[i]); removeErr != nil {
+				log.Println(removeErr)
+			}
+		}
+	}
 }
 
 func deleteOldLogs() {

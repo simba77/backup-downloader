@@ -29,6 +29,25 @@
       "port": 22,
       "pathTemplate": "hestia",
       "filePattern": ""
+    },
+    {
+      "active": true,
+      "name": "mail",
+      "daysCount": 14,
+      "maxParallelDownloads": 2,
+      "backupsPath": "/backups/",
+      "type": "sftp",
+      "server": "",
+      "user": "root",
+      "password": "",
+      "port": 22,
+      "pathTemplate": "nxsBackup",
+      "filePattern": "",
+      "retention": {
+        "daily": 14,
+        "weekly": 60,
+        "monthly": 400
+      }
     }
   ]
 }

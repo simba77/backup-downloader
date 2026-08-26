@@ -22,11 +22,17 @@ The binary files will appear in the build directory.
 
 ## Run
 
-Run a binary file with the CONFIG_PATH environment variable pointing to the directory with `config.json`
+Run a binary file with the CONFIG_PATH environment variable pointing to the directory with `config.json`.
+Binaries in `build/` are named after their target platform (`linux-amd64`, `linux-arm64`, `darwin-amd64`).
+When `CONFIG_PATH` is not set, `config.json` is looked up in the current working directory.
 
 ```shell
 CONFIG_PATH=/path/to/config ./linux-amd64
 ```
+
+The process runs in a loop: on every pass it deletes the outdated local files, downloads the current ones and
+sleeps until `startBackupsHour` of the next day. Logs are written to `storagePath/logs/log-DD-MM-YYYY.log`,
+one file per day, kept for `logRetentionDays` days.
 
 
 ## Configuration
@@ -35,7 +41,7 @@ Copy [config.json.example](config.json.example) to your config directory and ren
 
 | Field | Description |
 |---|---|
-| `storagePath` | Local directory where downloaded backups are stored |
+| `storagePath` | Local directory where downloaded backups are stored. A path not starting with `/` is resolved against the current working directory |
 | `startBackupsHour` | Hour of the day (0–23) when the backup download starts |
 | `logRetentionDays` | How many days to keep log files (default: 14) |
 | `servers` | List of remote servers to download from |
@@ -46,14 +52,16 @@ Each server entry:
 |---|---|
 | `active` | Enable or disable the server without removing it from config |
 | `name` | Unique server name, used as a subdirectory name in `storagePath` |
-| `daysCount` | How many days to keep downloaded files locally |
+| `daysCount` | How many days to keep downloaded files locally. For the `nxsBackup` template it is only the fallback for periods missing from `retention` |
 | `maxParallelDownloads` | Number of files downloaded simultaneously from this server |
 | `backupsPath` | Remote path to walk for backup files |
+| `type` | Reserved for future transports, currently ignored — the connection is always SSH + SFTP |
 | `server` | Remote server hostname or IP |
 | `user` / `password` | SSH credentials |
 | `port` | SSH port (usually 22) |
 | `pathTemplate` | File naming convention on the remote server (see below) |
 | `filePattern` | Optional regexp to filter remote files by path |
+| `retention` | Per-period retention in days for the `nxsBackup` template: `daily`, `weekly`, `monthly`. Any period left out falls back to `daysCount` |
 
 ### Path templates
 
@@ -62,8 +70,43 @@ Each server entry:
 | `hestia` | `/backup/admin.2023-12-25_05-11-45.tar` | `.tar` |
 | `filesWithDate` | `/backups/test.20231221.sql.gz` | `.gz` |
 | `pathWithDate` | `/24.12.23/test.tgz` | `.tgz`, `.bz2` |
+| `nxsBackup` | `/backups/configs/acme/daily/acme_2026-08-18_02-00.tar.gz` | `.gz`, `.tgz`, `.tar`, `.bz2`, `.xz`, `.zst`, `.zip` |
 
-The template determines how the date is extracted from the path (used to detect and delete files older than `daysCount` days).
+The template determines how the date is extracted from the path, which extensions are accepted and how the file
+is laid out locally. The date is what makes a copy outdated: files older than the retention are neither
+downloaded nor kept in the storage.
+
+### nxsBackup
+
+[nxs-backup](https://github.com/nixys/nxs-backup) lays copies out as
+`<group>/<source>/<daily|weekly|monthly>/<source>_<YYYY-MM-DD>_<HH-MM>.<ext>`. Only paths matching that
+layout are downloaded, everything else under `backupsPath` is ignored.
+
+Two things are specific to this template:
+
+* **The remote tree is mirrored locally**, e.g. `storagePath/mail/configs/acme/daily/acme_2026-08-18_02-00.tar.gz`.
+  A flat layout is not possible here: the daily, weekly and monthly copies of the same backup share one file name.
+* **Retention is counted per period** via the `retention` field, because monthly copies are older than any sane
+  `daysCount` and would be deleted right after being downloaded. Empty directories are removed after the cleanup.
+
+nxs-backup replaces a daily copy with a symlink to the weekly or monthly one
+(`daily/acme_2026-08-23_02-01.tar.gz -> ../weekly/acme_2026-08-23_02-01.tar.gz`). Such links are downloaded as
+regular files — SFTP resolves them on open — so every local copy is self-contained and deleting a weekly file
+by its own retention never leaves a dangling link in `daily/`.
+
+### Local storage layout
+
+Every server gets its own directory named after `name` inside `storagePath`. What happens inside depends on
+the template:
+
+| Template | Local path |
+|---|---|
+| `hestia`, `filesWithDate` | `storagePath/<name>/<file>` |
+| `pathWithDate` | `storagePath/<name>/<date>_<file>` — the date from the remote directory is prepended to keep the names unique |
+| `nxsBackup` | `storagePath/<name>/<remote path relative to backupsPath>` — the remote tree is mirrored |
+
+A file that already exists locally is never downloaded again, so an interrupted run just resumes on the next
+pass. Note that a partially downloaded file counts as existing: delete it manually to force a re-download.
 
 ## Service example
 
