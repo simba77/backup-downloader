@@ -62,6 +62,7 @@ Each server entry:
 | `pathTemplate` | File naming convention on the remote server (see below) |
 | `filePattern` | Optional regexp to filter remote files by path |
 | `retention` | Per-period retention in days for the `nxsBackup` template: `daily`, `weekly`, `monthly`. Any period left out falls back to `daysCount` |
+| `minCopies` | How many of the newest copies of every backup are kept and downloaded even when they are past the retention (default: 1) |
 
 ### Path templates
 
@@ -74,7 +75,31 @@ Each server entry:
 
 The template determines how the date is extracted from the path, which extensions are accepted and how the file
 is laid out locally. The date is what makes a copy outdated: files older than the retention are neither
-downloaded nor kept in the storage.
+downloaded nor kept in the storage — except for the newest copies protected by `minCopies`.
+
+### minCopies
+
+The age of a copy is taken from its path, not from the state of the remote server. If backups stop being made
+(no disk space left, a broken cron, a dead service), no new copies appear while the existing ones keep ageing,
+and a retention applied by date alone would delete the last backups the storage has.
+
+`minCopies` (default: 1) is the guard against that: the newest `minCopies` copies of every backup series are
+never deleted and are downloaded even when they are older than the retention, so a source server that stopped
+making backups leaves the last copies in place instead of silently emptying the storage. As soon as fresh
+copies appear again, the outdated ones are cleaned up on the next pass as usual.
+
+A series is a single backup over time, not the whole server — the protection is per series, so one broken
+source does not stop the cleanup of the others:
+
+| Template | Series |
+|---|---|
+| `hestia`, `filesWithDate` | The file name with the date removed, e.g. all copies of `admin` |
+| `pathWithDate` | The file name, e.g. all copies of `test.tgz` |
+| `nxsBackup` | The `<group>/<source>/<period>` directory, e.g. `configs/acme/daily` |
+
+Raising `minCopies` also raises the guaranteed depth of the history: with `minCopies: 2` the storage always
+keeps at least two copies of every backup. The copies protected this way are logged as
+`Keep File: ... - the last copies of this backup, no newer ones`.
 
 ### nxsBackup
 

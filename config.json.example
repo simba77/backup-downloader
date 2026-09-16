@@ -14,7 +14,8 @@
       "password": "",
       "port": 22,
       "pathTemplate": "hestia",
-      "filePattern": ""
+      "filePattern": "",
+      "minCopies": 1
     },
     {
       "active": true,
@@ -43,6 +44,7 @@
       "port": 22,
       "pathTemplate": "nxsBackup",
       "filePattern": "",
+      "minCopies": 2,
       "retention": {
         "daily": 14,
         "weekly": 60,

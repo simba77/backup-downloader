@@ -38,6 +38,9 @@ type Server struct {
 	PathTemplate         PathTemplate
 	FilePattern          string
 	Retention            Retention
+	// MinCopies is the number of the newest copies of every backup kept even
+	// when they are past the retention. Defaults to defaultMinCopies.
+	MinCopies int
 }
 
 type NewConfig struct {

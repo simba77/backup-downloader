@@ -74,7 +74,7 @@ func CloseConnect(config Server) {
 }
 
 func getRemoteFiles(sftpClient *sftp.Client, server Server) []string {
-	var remoteFiles []string
+	var candidates []string
 	var filesExpression *regexp.Regexp
 
 	if len(server.FilePattern) > 0 {
@@ -89,7 +89,7 @@ func getRemoteFiles(sftpClient *sftp.Client, server Server) []string {
 			continue
 		}
 
-		if walker.Stat().IsDir() || isOldFile(walker.Path(), server) || (filesExpression != nil && !filesExpression.MatchString(walker.Path())) {
+		if walker.Stat().IsDir() || (filesExpression != nil && !filesExpression.MatchString(walker.Path())) {
 			continue
 		}
 
@@ -99,7 +99,7 @@ func getRemoteFiles(sftpClient *sftp.Client, server Server) []string {
 			if path.Ext(walker.Path()) != ".tar" {
 				continue
 			}
-			remoteFiles = append(remoteFiles, walker.Path())
+			candidates = append(candidates, walker.Path())
 		}
 
 		// Files with date /backups/test.20231221.sql.gz
@@ -107,7 +107,7 @@ func getRemoteFiles(sftpClient *sftp.Client, server Server) []string {
 			if path.Ext(walker.Path()) != ".gz" {
 				continue
 			}
-			remoteFiles = append(remoteFiles, walker.Path())
+			candidates = append(candidates, walker.Path())
 		}
 
 		// Files in paths /24.12.23/test.tgz, /24.12.23/test.sql.bz2
@@ -117,7 +117,7 @@ func getRemoteFiles(sftpClient *sftp.Client, server Server) []string {
 			if extension != ".tgz" && extension != ".bz2" {
 				continue
 			}
-			remoteFiles = append(remoteFiles, walker.Path())
+			candidates = append(candidates, walker.Path())
 		}
 
 		// nxs-backup path structure. /backups/configs/acme/daily/acme_2026-08-18_02-00.tar.gz
@@ -132,8 +132,23 @@ func getRemoteFiles(sftpClient *sftp.Client, server Server) []string {
 			// Symlinks (daily copies pointing to the weekly/monthly ones) are kept in
 			// the list on purpose: SFTP resolves them on open, so the original file
 			// gets downloaded instead of a dangling link.
-			remoteFiles = append(remoteFiles, walker.Path())
+			candidates = append(candidates, walker.Path())
 		}
+	}
+
+	// The retention is applied to the whole listing at once: the newest copies of
+	// every series are downloaded even when they are past their retention. Without
+	// it a server that stopped making backups would have nothing left to download,
+	// and the local storage could never recover the copies it deleted by age.
+	var remoteFiles []string
+	for _, item := range classifyCopies(candidates, server) {
+		if item.expired {
+			continue
+		}
+		if item.protected {
+			log.Printf("[%s] Downloading an outdated copy %s: there are no newer ones on the server", server.Name, item.path)
+		}
+		remoteFiles = append(remoteFiles, item.path)
 	}
 
 	return remoteFiles
