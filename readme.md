@@ -19,6 +19,17 @@ sh build.sh
 
 The binary files will appear in the build directory.
 
+### Releases
+
+Pushing a tag that starts with `v` runs [.github/workflows/release.yml](.github/workflows/release.yml): it builds
+the same platforms through `build.sh` and attaches the binaries to a GitHub release named after the tag.
+
+```shell
+git tag v1.0.0 && git push origin v1.0.0
+```
+
+Note that `build.sh` needs bash for its array of platforms — run it as `bash build.sh` on systems where `sh` is dash.
+
 
 ## Run
 
