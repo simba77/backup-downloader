@@ -3,7 +3,47 @@
 Downloads backups from a remote SFTP server and stores them for the required number of days.
 Thus, one copy can be stored on the main server to save space, and as many copies as you want on the backup server.
 
-## Build
+## Installation
+
+Prebuilt binaries for `linux-amd64`, `linux-arm64` and `darwin-amd64` are attached to every
+[release](https://github.com/simba77/backup-downloader/releases). The steps below install the latest one on Linux
+into `/backups`, the directory that also holds `config.json` in the service example — use your own if you like.
+
+Download the binary for the server architecture and make it executable:
+
+```shell
+mkdir -p /backups
+ARCH=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
+curl -fL -o /backups/backuper https://github.com/simba77/backup-downloader/releases/latest/download/linux-$ARCH
+chmod +x /backups/backuper
+```
+
+Put the configuration next to it, then fill it in as described in [Configuration](#configuration):
+
+```shell
+curl -fL -o /backups/config.json https://raw.githubusercontent.com/simba77/backup-downloader/main/config.json.example
+```
+
+Then run it as a service, see [Service example](#service-example).
+
+### Updating
+
+Replace the binary with the new one and restart the service. The download goes to a temporary file so that
+a failed one does not leave the service with a broken binary:
+
+```shell
+ARCH=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
+curl -fL -o /backups/backuper.new https://github.com/simba77/backup-downloader/releases/latest/download/linux-$ARCH
+chmod +x /backups/backuper.new && mv /backups/backuper.new /backups/backuper
+systemctl restart backuper
+```
+
+To install a specific version, replace `latest/download` with `download/<tag>`, e.g. `download/v1.1.0`.
+
+If the service fails with `status=203/EXEC`, systemd could not execute the binary: check that it is executable
+(`ls -la`) and built for the server architecture (`file /backups/backuper` must say `ELF`, and match `uname -m`).
+
+## Build from source
 
 Change the target platforms in the file: build.sh (if you need)
 
@@ -25,7 +65,7 @@ Pushing a tag that starts with `v` runs [.github/workflows/release.yml](.github/
 the same platforms through `build.sh` and attaches the binaries to a GitHub release named after the tag.
 
 ```shell
-git tag v1.0.0 && git push origin v1.0.0
+git tag -a v1.1.0 -m v1.1.0 && git push origin v1.1.0
 ```
 
 Note that `build.sh` needs bash for its array of platforms — run it as `bash build.sh` on systems where `sh` is dash.
@@ -34,7 +74,8 @@ Note that `build.sh` needs bash for its array of platforms — run it as `bash b
 ## Run
 
 Run a binary file with the CONFIG_PATH environment variable pointing to the directory with `config.json`.
-Binaries in `build/` are named after their target platform (`linux-amd64`, `linux-arm64`, `darwin-amd64`).
+Binaries in releases and in `build/` are named after their target platform (`linux-amd64`, `linux-arm64`,
+`darwin-amd64`); the installation above renames it to `backuper`.
 When `CONFIG_PATH` is not set, `config.json` is looked up in the current working directory.
 
 ```shell
@@ -142,18 +183,19 @@ the template:
 | `pathWithDate` | `storagePath/<name>/<date>_<file>` — the date from the remote directory is prepended to keep the names unique |
 | `nxsBackup` | `storagePath/<name>/<remote path relative to backupsPath>` — the remote tree is mirrored |
 
-A file that already exists locally is never downloaded again, so an interrupted run just resumes on the next
-pass. Note that a partially downloaded file counts as existing: delete it manually to force a re-download.
+A file that already exists locally is never downloaded again. A file is downloaded to `<file>.part` and gets
+its final name only when it has been copied completely, so an interrupted download is retried on the next pass;
+leftover `.part` files are cleaned up automatically.
 
 ## Service example
+
+Create the unit:
 
 ```shell
 systemctl edit --full --force backuper.service
 ```
 
-Config example
-
-Change the ExecStart and Environment parameters
+Change `ExecStart` to the binary path and `CONFIG_PATH` to the directory with `config.json`:
 
 ```
 [Unit]
@@ -170,17 +212,14 @@ ExecStart=/backups/backuper
 WantedBy=multi-user.target
 ```
 
+Start it and enable autostart:
+
 ```shell
 systemctl daemon-reload
+systemctl enable --now backuper
+systemctl status backuper
 ```
 
-```shell
-systemctl start backuper
-```
-
-Enable autostart
-
-```shell
-systemctl enable backuper
-```
+Errors that happen before the log file is opened, such as a broken `config.json`, go to the journal
+(`journalctl -u backuper`); everything else is logged to `storagePath/logs/`.
 
