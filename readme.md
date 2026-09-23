@@ -73,6 +73,7 @@ Each server entry:
 | `pathTemplate` | File naming convention on the remote server (see below) |
 | `filePattern` | Optional regexp to filter remote files by path |
 | `retention` | Per-period retention in days for the `nxsBackup` template: `daily`, `weekly`, `monthly`. Any period left out falls back to `daysCount` |
+| `sequentialReads` | Read every file with one request at a time instead of many concurrent ones (default: `false`). Slower, but required when `backupsPath` cannot serve reads out of order, e.g. an FTP share mounted with `curlftpfs` — otherwise large files fail with `sftp: "Failure" (SSH_FX_FAILURE)` |
 | `minCopies` | How many of the newest copies of every backup are kept and downloaded even when they are past the retention (default: 1) |
 
 ### Path templates

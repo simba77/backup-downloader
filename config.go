@@ -41,6 +41,10 @@ type Server struct {
 	// MinCopies is the number of the newest copies of every backup kept even
 	// when they are past the retention. Defaults to defaultMinCopies.
 	MinCopies int
+	// SequentialReads reads every file with one request at a time instead of
+	// many concurrent ones. Needed when the remote path cannot serve reads out
+	// of order, e.g. an FTP share mounted with curlftpfs.
+	SequentialReads bool
 }
 
 type NewConfig struct {

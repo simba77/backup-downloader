@@ -29,7 +29,8 @@
       "password": "",
       "port": 22,
       "pathTemplate": "hestia",
-      "filePattern": ""
+      "filePattern": "",
+      "sequentialReads": true
     },
     {
       "active": true,

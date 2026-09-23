@@ -53,7 +53,12 @@ func Connect(config Server) (*sftp.Client, error) {
 	}
 
 	// open an SFTP session over an existing ssh connection.
-	if sftpClient, err := sftp.NewClient(connection[config.Name]); err == nil {
+	var clientOptions []sftp.ClientOption
+	if config.SequentialReads {
+		clientOptions = append(clientOptions, sftp.UseConcurrentReads(false))
+	}
+
+	if sftpClient, err := sftp.NewClient(connection[config.Name], clientOptions...); err == nil {
 		client[config.Name] = sftpClient
 		return client[config.Name], nil
 	} else {
