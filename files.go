@@ -11,7 +11,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -26,31 +25,56 @@ func checkAndCreateStorageDirectory(server Server) {
 	}
 }
 
+// partialSuffix marks a file that is still being downloaded. It gets the final
+// name only after the whole file has been copied, so an interrupted download
+// never looks like an existing copy.
+const partialSuffix = ".part"
+
+// localFilePath returns where the remote file is stored locally
+func localFilePath(server Server, remotePath string) string {
+	storagePathForServer := storagePath + server.Name + "/"
+
+	switch server.PathTemplate {
+	case PathWithDate:
+		// Add date to filename
+		date := pathWithDateExpression.FindString(remotePath)
+		return storagePathForServer + date + "_" + path.Base(remotePath)
+	case NxsBackup:
+		// Mirror the remote tree, otherwise the daily/weekly/monthly copies
+		// of the same backup would collide by name
+		return storagePathForServer + nxsBackupRelativePath(server, remotePath)
+	default:
+		return storagePathForServer + path.Base(remotePath)
+	}
+}
+
+// localFileExists reports whether the remote file has already been downloaded
+func localFileExists(server Server, remotePath string) bool {
+	_, err := os.Lstat(localFilePath(server, remotePath))
+	return err == nil
+}
+
 func downloadFileFromServer(client *sftp.Client, server Server, filename string) {
 	log.Printf("[%s] Starting download - %s \n", server.Name, filename)
+
+	// Checked before opening the remote file to save a round trip to the server
+	localFileName := localFilePath(server, filename)
+	if localFileExists(server, filename) {
+		log.Printf("[%s] File exists %s. Skip downloading\n", server.Name, path.Base(filename))
+		return
+	}
+
 	remoteFile, err := client.Open(filename)
 	if err != nil {
-		log.Printf("%v", err)
+		log.Printf("[%s] %s: %v", server.Name, filename, err)
 		return
 	}
 	defer remoteFile.Close()
 
-	file, _ := remoteFile.Stat()
-
-	storagePathForServer := storagePath + server.Name + "/"
-
-	var localFileName string
-	switch server.PathTemplate {
-	case PathWithDate:
-		// Add date to filename
-		date := pathWithDateExpression.FindString(filename)
-		localFileName = storagePathForServer + date + "_" + file.Name()
-	case NxsBackup:
-		// Mirror the remote tree, otherwise the daily/weekly/monthly copies
-		// of the same backup would collide by name
-		localFileName = storagePathForServer + nxsBackupRelativePath(server, filename)
-	default:
-		localFileName = storagePathForServer + file.Name()
+	file, err := remoteFile.Stat()
+	if err != nil {
+		log.Printf("[%s] %s: %v", server.Name, filename, err)
+		return
 	}
 
 	if err := os.MkdirAll(filepath.Dir(localFileName), 0755); err != nil {
@@ -58,26 +82,36 @@ func downloadFileFromServer(client *sftp.Client, server Server, filename string)
 		return
 	}
 
-	if _, err := os.Lstat(localFileName); err == nil {
-		log.Printf("[%s] File exists %s. Skip downloading\n", server.Name, file.Name())
-		return
-	}
-
-	writer, err := os.OpenFile(localFileName, syscall.O_CREAT|syscall.O_WRONLY, 0644)
+	partialFileName := localFileName + partialSuffix
+	writer, err := os.OpenFile(partialFileName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		log.Println(err)
 		return
 	}
-	defer writer.Close()
 
 	t1 := time.Now()
-	n, err := io.Copy(writer, remoteFile)
+	n, copyErr := io.Copy(writer, remoteFile)
+	closeErr := writer.Close()
+
+	switch {
+	case copyErr != nil:
+		err = copyErr
+	case closeErr != nil:
+		err = closeErr
+	case n != file.Size():
+		err = fmt.Errorf("expected %v bytes, got %d", file.Size(), n)
+	}
 	if err != nil {
-		log.Println(err)
+		log.Printf("[%s] Download failed - %s: %v", server.Name, filename, err)
+		if removeErr := os.Remove(partialFileName); removeErr != nil {
+			log.Println(removeErr)
+		}
 		return
 	}
-	if n != file.Size() {
-		log.Printf("[%s] copy: expected %v bytes, got %d \n", server.Name, file.Size(), n)
+
+	if err := os.Rename(partialFileName, localFileName); err != nil {
+		log.Println(err)
+		return
 	}
 
 	log.Printf("[%s] Downloaded - %s - %v bytes in %s \n", server.Name, file.Name(), file.Size(), time.Since(t1))
@@ -274,6 +308,16 @@ func deleteOldFiles(server Server) {
 			return nil
 		}
 		if entry.IsDir() {
+			return nil
+		}
+
+		// Leftover of a download interrupted by a crash, it will be downloaded again
+		if strings.HasSuffix(filePath, partialSuffix) {
+			if removeErr := os.Remove(filePath); removeErr != nil {
+				log.Println(removeErr)
+			} else {
+				log.Printf("[%s] Delete partially downloaded file: %s", server.Name, filePath)
+			}
 			return nil
 		}
 

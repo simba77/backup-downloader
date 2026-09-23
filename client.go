@@ -145,7 +145,9 @@ func getRemoteFiles(sftpClient *sftp.Client, server Server) []string {
 		if item.expired {
 			continue
 		}
-		if item.protected {
+		// The copy is only reported when it is really going to be downloaded:
+		// the protected copies are usually already in the local storage
+		if item.protected && !localFileExists(server, item.path) {
 			log.Printf("[%s] Downloading an outdated copy %s: there are no newer ones on the server", server.Name, item.path)
 		}
 		remoteFiles = append(remoteFiles, item.path)
